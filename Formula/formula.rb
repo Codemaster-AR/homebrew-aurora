@@ -1,10 +1,10 @@
 class Aurora < Formula
   desc "Launcher for the Aurora Bioscience Dashboard"
-  homepage "https://github.com/your-username/aurora"
-  # PASTE YOUR RELEASE LINK BELOW
-  url "https://github.com/your-username/aurora/releases/download/v1.0.0/aurora-1.0.0.tar.gz"
-  sha256 "ef9b71d9178eabe4b8beef7e241f0588f7615ff2c105de984feee9641ff84202"
-  version "1.0.0"
+  homepage "https://github.com/codemaster-ar/aurora"
+  # URL for the v2.0.0 release
+  url "https://github.com/Codemaster-AR/aurora/archive/refs/tags/v2.0.0.tar.gz"
+  sha256 "af5faada4e05c7f4dfcf4aa66ea58b42f640dce18c8f6183362a301eecb5a2ee"
+  version "2.0.0"
 
   depends_on "node"
   depends_on "python@3.12"
