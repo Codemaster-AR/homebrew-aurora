@@ -38,7 +38,7 @@ class Aurora < Formula
 
           # Path to the application files in Homebrew's libexec
           app_dir = "#{libexec}/genelab"
-          
+
           try:
               # Start the Electron GUI via npm
               subprocess.run(["npm", "start"], cwd=app_dir)
