@@ -2,7 +2,7 @@ class Aurora < Formula
   desc "Launcher for the Aurora Bioscience Dashboard"
   homepage "https://github.com/your-username/aurora"
   # PASTE YOUR RELEASE LINK BELOW
-  url "https://github.com/your-username/aurora/releases/download/v1.0.0/aurora-1.0.0.tar.gz"
+  url "https://github.com/Codemaster-AR/aurora/archive/refs/tags/v1.0.0.tar.gz
   sha256 "ef9b71d9178eabe4b8beef7e241f0588f7615ff2c105de984feee9641ff84202"
   version "1.0.0"
 
