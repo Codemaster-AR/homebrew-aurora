@@ -9,61 +9,74 @@ class AuroraBioscience < Formula
   depends_on "python@3.12"
 
   def install
-    # 1. SMART FOLDER DETECTION:
-    # Look for package.json anywhere in the unpacked source.
+    # 1. SMART DOUBLE UNPACK
+    # We look for any .tar.gz files that were accidentally put INSIDE the main download.
+    # If found, we unpack it right here in the build directory.
+    nested_tarball = Dir.glob("**/*.tar.gz").first
+    if nested_tarball
+      ohai "Detected nested tarball: #{nested_tarball}. Performing secondary extraction..."
+      # Unpack the inner tarball and flatten it
+      system "tar", "-xzf", nested_tarball, "--strip-components=1" rescue system "tar", "-xzf", nested_tarball
+    end
+
+    # 2. SMART FOLDER DETECTION
+    # We search recursively (**) for package.json to find the actual app root.
     package_json = Dir.glob("**/package.json").first
     
     if package_json.nil?
-      odie "Error: Could not find package.json in the source. Ensure your repository contains a Node.js project."
+      # If we still can't find it, we list the files to help you debug.
+      system "ls", "-R"
+      odie "Error: Could not find package.json anywhere in the source (even after checking for nested tarballs)."
     end
 
-    # Determine the actual root of the app (where package.json lives)
+    # This is the directory where the Node.js app actually lives.
     app_source_dir = File.dirname(package_json)
 
-    # 2. RUN INSTALL:
-    # Perform npm install inside the discovered folder
+    # 3. INSTALL DEPENDENCIES (Universal)
+    # We use --omit=dev for a smaller installation footprint.
     cd app_source_dir do
       system "npm", "install", "--omit=dev"
     end
 
-    # 3. STAGING:
-    # Move everything into the Homebrew libexec folder
+    # 4. MOVE TO FINAL LOCATION
+    # We move the entire structure into libexec, which Homebrew handles 
+    # differently on Mac (/opt/homebrew) vs Linux (/home/linuxbrew).
     libexec.install Dir["*"]
 
-    # 4. OS-SPECIFIC CLEANUP:
-    # Only run macOS-specific attribute cleaning if on a Mac
+    # 5. OS-SPECIFIC ATTRIBUTE CLEANING
+    # macOS puts "quarantine" flags on downloaded files; Linux does not.
     if OS.mac?
       system "xattr", "-rd", "com.apple.quarantine", "#{libexec}" rescue nil
     end
 
-    # 5. UNIVERSAL LAUNCHER:
-    # We find where the app ended up inside libexec to hardcode the correct path
-    installed_app_path = Dir.glob("#{libexec}/**/package.json").map { |f| File.dirname(f) }.first
+    # 6. UNIVERSAL LAUNCHER (Python-based)
+    # We re-locate the package.json path inside the final libexec folder.
+    final_app_path = Dir.glob("#{libexec}/**/package.json").map { |f| File.dirname(f) }.first
 
     (bin/"aurora-bioscience").write <<~EOS
       #!/usr/bin/env python3
       import os, subprocess, sys, platform
 
       def main():
-          msg = "Launching Aurora Bioscience... If an error popup appears, just click OK."
+          msg = "Aurora Bioscience is starting..."
           
-          # OS-Agnostic Messaging
-          sys_name = platform.system()
-          if sys_name == "Darwin":
-              # macOS Dialog
+          # OS-Agnostic UI feedback
+          current_os = platform.system()
+          if current_os == "Darwin":
+              # macOS: Use native AppleScript dialog
               os.system(f'osascript -e "display dialog \\"{msg}\\" buttons {{\\"OK\\"}} default button \\"OK\\""')
-          elif sys_name == "Linux":
-              # Linux/WSL Notification (if notify-send exists)
+          elif current_os == "Linux":
+              # Linux/WSL: Use notify-send if available, otherwise print to terminal
               if os.system("which notify-send > /dev/null 2>&1") == 0:
                   os.system(f'notify-send "Aurora Bioscience" "{msg}"')
               else:
                   print(f"INFO: {msg}")
 
-          # Use the smart-detected path
-          app_dir = "#{installed_app_path}"
+          # Use the smart-detected path inside the Homebrew Cellar
+          app_dir = "#{final_app_path}"
           
           try:
-              # Start the Node application
+              # Start the Node application using the correct working directory
               subprocess.run(["npm", "start"], cwd=app_dir)
           except Exception as e:
               print(f"Error launching Aurora Bioscience: {e}")
@@ -73,12 +86,12 @@ class AuroraBioscience < Formula
           main()
     EOS
 
-    # Make the launcher executable
+    # 7. MAKE EXECUTABLE
     chmod 0755, bin/"aurora-bioscience"
   end
 
   test do
-    # Basic check to see if the command was created
+    # Simple check to ensure the binary was actually linked
     assert_predicate bin/"aurora-bioscience", :exist?
   end
 end
