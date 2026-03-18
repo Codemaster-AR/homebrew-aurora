@@ -9,43 +9,38 @@ class AuroraBioscience < Formula
   depends_on "python@3.12"
 
   def install
-    # 1. Locate the 'genelab' directory anywhere in the unpacked source
-    # This fixes the error if the folder is nested (e.g., inside 'aurora-4.0.0/...')
-    genelab_path = Dir.glob("**/genelab").first
-    
-    if genelab_path.nil?
-      odie "Could not find the 'genelab' directory in the source. Please check your repository structure."
-    end
+    # 1. Run npm install at the root (works on Mac & Linux)
+    system "npm", "install", "--production"
 
-    # 2. Run npm install inside that directory
-    cd genelab_path do
-      system "npm", "install", "--production"
-    end
-
-    # 3. Move everything to libexec
+    # 2. Move everything to libexec
     libexec.install Dir["*"]
 
-    # 4. Strip Gatekeeper quarantine on macOS
+    # 3. Strip Gatekeeper quarantine (macOS only)
     if OS.mac?
       system "xattr", "-rd", "com.apple.quarantine", "#{libexec}"
     end
 
-    # 5. Create the launcher
-    # We re-locate the 'genelab' folder inside the final libexec path
-    final_genelab_path = Dir.glob("#{libexec}/**/genelab").first
-    
+    # 4. Create the final launcher script (Cross-Platform)
     (bin/"aurora-bioscience").write <<~EOS
       #!/usr/bin/env python3
       import os, subprocess, sys, platform
 
       def main():
           msg = "There could be an error. If there is, just press OK."
+          
+          # Cross-platform popup/notification logic
           if platform.system() == "Darwin":
+              # macOS: Use AppleScript
               os.system(f'osascript -e "display dialog \\"{msg}\\" buttons {{\\"OK\\"}} default button \\"OK\\""')
-          else:
-              print(f"INFO: {msg}")
+          elif platform.system() == "Linux":
+              # Linux/WSL: Try to use notify-send (common) or just print to terminal
+              if os.system("which notify-send > /dev/null") == 0:
+                  os.system(f'notify-send "Aurora Bioscience" "{msg}"')
+              else:
+                  print(f"INFO: {msg}")
 
-          app_dir = "#{final_genelab_path}"
+          # Use libexec path (Homebrew handles the path difference between Mac and Linux automatically)
+          app_dir = "#{libexec}"
           
           try:
               subprocess.run(["npm", "start"], cwd=app_dir)
