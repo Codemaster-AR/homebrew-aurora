@@ -3,7 +3,7 @@ class AuroraBioscience < Formula
   homepage "https://github.com/your-username/aurora"
   # PASTE YOUR GITHUB RELEASE URL HERE
   url "https://github.com/Codemaster-AR/aurora/archive/refs/tags/v2.0.0.tar.gz"
-  sha256 "af5faada4e05c7f4dfcf4aa66ea58b42f640dce18c8f6183362a301eecb5a2ee"
+  sha256 "48ac694d9aa72527ddd14a899f7a6a0c1bd0958f0007705f02cb9a80eb4c9c21"
   version "2.0.0"
 
   depends_on "node"
