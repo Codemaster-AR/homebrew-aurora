@@ -9,40 +9,61 @@ class AuroraBioscience < Formula
   depends_on "python@3.12"
 
   def install
-    # 1. Run npm install at the root (works on Mac & Linux)
-    system "npm", "install", "--production"
-
-    # 2. Move everything to libexec
-    libexec.install Dir["*"]
-
-    # 3. Strip Gatekeeper quarantine (macOS only)
-    if OS.mac?
-      system "xattr", "-rd", "com.apple.quarantine", "#{libexec}"
+    # 1. SMART FOLDER DETECTION:
+    # Look for package.json anywhere in the unpacked source.
+    package_json = Dir.glob("**/package.json").first
+    
+    if package_json.nil?
+      odie "Error: Could not find package.json in the source. Ensure your repository contains a Node.js project."
     end
 
-    # 4. Create the final launcher script (Cross-Platform)
+    # Determine the actual root of the app (where package.json lives)
+    app_source_dir = File.dirname(package_json)
+
+    # 2. RUN INSTALL:
+    # Perform npm install inside the discovered folder
+    cd app_source_dir do
+      system "npm", "install", "--omit=dev"
+    end
+
+    # 3. STAGING:
+    # Move everything into the Homebrew libexec folder
+    libexec.install Dir["*"]
+
+    # 4. OS-SPECIFIC CLEANUP:
+    # Only run macOS-specific attribute cleaning if on a Mac
+    if OS.mac?
+      system "xattr", "-rd", "com.apple.quarantine", "#{libexec}" rescue nil
+    end
+
+    # 5. UNIVERSAL LAUNCHER:
+    # We find where the app ended up inside libexec to hardcode the correct path
+    installed_app_path = Dir.glob("#{libexec}/**/package.json").map { |f| File.dirname(f) }.first
+
     (bin/"aurora-bioscience").write <<~EOS
       #!/usr/bin/env python3
       import os, subprocess, sys, platform
 
       def main():
-          msg = "There could be an error. If there is, just press OK."
+          msg = "Launching Aurora Bioscience... If an error popup appears, just click OK."
           
-          # Cross-platform popup/notification logic
-          if platform.system() == "Darwin":
-              # macOS: Use AppleScript
+          # OS-Agnostic Messaging
+          sys_name = platform.system()
+          if sys_name == "Darwin":
+              # macOS Dialog
               os.system(f'osascript -e "display dialog \\"{msg}\\" buttons {{\\"OK\\"}} default button \\"OK\\""')
-          elif platform.system() == "Linux":
-              # Linux/WSL: Try to use notify-send (common) or just print to terminal
-              if os.system("which notify-send > /dev/null") == 0:
+          elif sys_name == "Linux":
+              # Linux/WSL Notification (if notify-send exists)
+              if os.system("which notify-send > /dev/null 2>&1") == 0:
                   os.system(f'notify-send "Aurora Bioscience" "{msg}"')
               else:
                   print(f"INFO: {msg}")
 
-          # Use libexec path (Homebrew handles the path difference between Mac and Linux automatically)
-          app_dir = "#{libexec}"
+          # Use the smart-detected path
+          app_dir = "#{installed_app_path}"
           
           try:
+              # Start the Node application
               subprocess.run(["npm", "start"], cwd=app_dir)
           except Exception as e:
               print(f"Error launching Aurora Bioscience: {e}")
@@ -52,10 +73,12 @@ class AuroraBioscience < Formula
           main()
     EOS
 
+    # Make the launcher executable
     chmod 0755, bin/"aurora-bioscience"
   end
 
   test do
+    # Basic check to see if the command was created
     assert_predicate bin/"aurora-bioscience", :exist?
   end
 end
