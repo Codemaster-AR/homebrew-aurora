@@ -3,7 +3,7 @@ class AuroraBioscience < Formula
   homepage "https://github.com/Codemaster-AR/aurora"
   url "https://github.com/Codemaster-AR/aurora/archive/refs/tags/v5.0.0.tar.gz"
   sha256 "4d442be62c68ba3ad33e54c565f1d249282ea33e1d479bef6baaf6c9c158163a"
-  version "4.0.0"
+  version "5.0.0"
 
   # Core dependencies
   depends_on "node"
