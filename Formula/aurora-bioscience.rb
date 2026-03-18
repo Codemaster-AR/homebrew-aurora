@@ -7,41 +7,50 @@ class AuroraBioscience < Formula
 
   depends_on "node"
   depends_on "python@3.12"
-  # FIX: Electron is required to run the dashboard
-  depends_on "electron"
 
   def install
-    # 1. SMART DOUBLE UNPACK
+    # 1. MASTER DOUBLE UNPACK
+    # Some GitHub releases contain nested tarballs. This ensures we get to the actual source.
     nested_tarball = Dir.glob("**/*.tar.gz").first
     if nested_tarball
       ohai "Detected nested tarball: #{nested_tarball}. Performing secondary extraction..."
+      # Attempt to unpack and flatten; fallback to standard unpack if strip-components fails
       system "tar", "-xzf", nested_tarball, "--strip-components=1" rescue system "tar", "-xzf", nested_tarball
     end
 
-    # 2. SMART FOLDER DETECTION
+    # 2. SMART RECURSIVE FOLDER DETECTION
+    # We search the entire unpacked tree for package.json to find the application root.
     package_json = Dir.glob("**/package.json").first
+    
     if package_json.nil?
-      system "ls", "-R"
-      odie "Error: Could not find package.json anywhere in the source."
+      system "ls", "-R" # Debugging: show what WE actually found
+      odie "Error: Could not find package.json anywhere in the source. Check repository structure."
     end
 
+    # The directory where the actual Node.js project lives
     app_source_dir = File.dirname(package_json)
 
-    # 3. INSTALL DEPENDENCIES
+    # 3. INSTALL DEPENDENCIES & ELECTRON
+    # Since 'electron' isn't a standalone Homebrew formula, we install it via npm 
+    # directly into the app's local node_modules.
     cd app_source_dir do
       system "npm", "install", "--omit=dev"
+      # We explicitly ensure electron is available in the local .bin folder
+      system "npm", "install", "electron", "--save-dev"
     end
 
-    # 4. MOVE TO FINAL LOCATION
+    # 4. STAGING TO LIBEXEC
+    # Move the entire structure (including node_modules) into the Homebrew Cellar.
     libexec.install Dir["*"]
 
     # 5. OS-SPECIFIC ATTRIBUTE CLEANING (macOS only)
     if OS.mac?
+      # Strips "Downloaded from Internet" flags to prevent security popups
       system "xattr", "-rd", "com.apple.quarantine", "#{libexec}" rescue nil
     end
 
-    # 6. UNIVERSAL LAUNCHER
-    # Locate where the app settled inside libexec
+    # 6. MASTER UNIVERSAL LAUNCHER (Python-based)
+    # Re-calculate the final path inside libexec where the package.json ended up.
     final_app_path = Dir.glob("#{libexec}/**/package.json").map { |f| File.dirname(f) }.first
 
     (bin/"aurora-bioscience").write <<~EOS
@@ -51,29 +60,33 @@ class AuroraBioscience < Formula
       def main():
           msg = "Aurora Bioscience is starting..."
           
+          # OS-Agnostic UI Logic
           current_os = platform.system()
           if current_os == "Darwin":
-              # FIX: Correctly escaped AppleScript string to avoid 'variable not defined' error
+              # macOS: Use native AppleScript dialog. 
+              # Corrected escaping: \\"{msg}\\" treats it as a string, not a variable.
               os.system(f'osascript -e "display dialog \\"{msg}\\" buttons {{\\"OK\\"}} default button \\"OK\\""')
           elif current_os == "Linux":
+              # Linux/WSL: Try notify-send for GUI, fallback to terminal print
               if os.system("which notify-send > /dev/null 2>&1") == 0:
                   os.system(f'notify-send "Aurora Bioscience" "{msg}"')
               else:
                   print(f"INFO: {msg}")
 
+          # Path to the application code
           app_dir = "#{final_app_path}"
           
-          # FIX: We find the Homebrew-installed Electron binary to ensure it works on all OSs
-          # Homebrew Prefix is usually /opt/homebrew (Mac) or /home/linuxbrew/.linuxbrew (Linux)
-          hb_prefix = "#{HOMEBREW_PREFIX}"
-          electron_bin = os.path.join(hb_prefix, "bin", "electron")
+          # Path to the locally installed electron engine
+          electron_bin = os.path.join(app_dir, "node_modules", ".bin", "electron")
 
+          # Execution logic
           try:
-              # We use 'electron .' directly to ensure it uses the engine Homebrew just installed
-              subprocess.run([electron_bin, "."], cwd=app_dir)
-          except FileNotFoundError:
-              # Fallback to npm start if electron binary isn't found directly
-              subprocess.run(["npm", "start"], cwd=app_dir)
+              if os.path.exists(electron_bin):
+                  # Use the specific electron binary we just installed
+                  subprocess.run([electron_bin, "."], cwd=app_dir)
+              else:
+                  # Fallback to npm start if binary is missing
+                  subprocess.run(["npm", "start"], cwd=app_dir)
           except Exception as e:
               print(f"Error launching Aurora Bioscience: {e}")
               sys.exit(1)
@@ -82,6 +95,7 @@ class AuroraBioscience < Formula
           main()
     EOS
 
+    # 7. PERMISSIONS
     chmod 0755, bin/"aurora-bioscience"
   end
 
