@@ -9,39 +9,45 @@ class AuroraBioscience < Formula
   depends_on "python@3.12"
 
   def install
-    # 1. Run npm install BEFORE moving files to libexec.
-    # This ensures the Ruby process is working within the active build sandbox.
-    cd "genelab" do
+    # 1. Locate the 'genelab' directory anywhere in the unpacked source
+    # This fixes the error if the folder is nested (e.g., inside 'aurora-4.0.0/...')
+    genelab_path = Dir.glob("**/genelab").first
+    
+    if genelab_path.nil?
+      odie "Could not find the 'genelab' directory in the source. Please check your repository structure."
+    end
+
+    # 2. Run npm install inside that directory
+    cd genelab_path do
       system "npm", "install", "--production"
     end
 
-    # 2. Now move all files (including the newly created node_modules) into libexec
+    # 3. Move everything to libexec
     libexec.install Dir["*"]
 
-    # 3. Strip Gatekeeper quarantine on macOS
+    # 4. Strip Gatekeeper quarantine on macOS
     if OS.mac?
       system "xattr", "-rd", "com.apple.quarantine", "#{libexec}"
     end
 
-    # 4. Create the final launcher script
-    # Note: we use #{libexec}/genelab because that is where the files moved to in step 2.
+    # 5. Create the launcher
+    # We re-locate the 'genelab' folder inside the final libexec path
+    final_genelab_path = Dir.glob("#{libexec}/**/genelab").first
+    
     (bin/"aurora-bioscience").write <<~EOS
       #!/usr/bin/env python3
       import os, subprocess, sys, platform
 
       def main():
-          # Simple popup for macOS users
           msg = "There could be an error. If there is, just press OK."
           if platform.system() == "Darwin":
               os.system(f'osascript -e "display dialog \\"{msg}\\" buttons {{\\"OK\\"}} default button \\"OK\\""')
           else:
               print(f"INFO: {msg}")
 
-          # Define the directory where the Node app lives
-          app_dir = "#{libexec}/genelab"
+          app_dir = "#{final_genelab_path}"
           
           try:
-              # Execute npm start within the correct directory
               subprocess.run(["npm", "start"], cwd=app_dir)
           except Exception as e:
               print(f"Error launching Aurora Bioscience: {e}")
@@ -51,7 +57,6 @@ class AuroraBioscience < Formula
           main()
     EOS
 
-    # 5. Ensure the python script is executable
     chmod 0755, bin/"aurora-bioscience"
   end
 
